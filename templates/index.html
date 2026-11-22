@@ -33,7 +33,7 @@
             font-weight: bold;
         }
 
-        .logo span {
+        .logo span, footer span {
             color: #43d6c5;
         }
 
@@ -175,17 +175,9 @@
             font-weight: bold;
         }
 
-        .Normal {
-            color: #16834a;
-        }
-
-        .High {
-            color: #d97706;
-        }
-
-        .Low {
-            color: #c62828;
-        }
+        .Normal { color: #16834a; }
+        .High { color: #d97706; }
+        .Low { color: #c62828; }
 
         .note {
             background: #edf6fa;
@@ -203,10 +195,6 @@
             text-align: center;
             padding: 25px;
             font-size: 14px;
-        }
-
-        footer span {
-            color: #43d6c5;
         }
 
         @media(max-width: 650px) {
@@ -249,14 +237,9 @@
         <h2>Upload Your Lab Report</h2>
         <p>Choose a PDF laboratory report to begin analysis.</p>
 
-        <form action="/analyze" method="POST"
-              enctype="multipart/form-data">
-
-            <input type="file" name="report"
-                   accept=".pdf" required>
-
+        <form action="/analyze" method="POST" enctype="multipart/form-data">
+            <input type="file" name="report" accept=".pdf" required>
             <br>
-
             <button type="submit">Analyze Report</button>
         </form>
     </section>
@@ -267,34 +250,33 @@
     </div>
     {% endif %}
 
-    {% if table %}
+    {% if results %}
 
     <div class="summary">
 
         <div class="card">
             <h3>Total Tests</h3>
-            <strong>{{ total }}</strong>
+            <strong>{{ total_tests }}</strong>
         </div>
 
         <div class="card">
             <h3>Normal</h3>
-            <strong>{{ normal }}</strong>
+            <strong>{{ normal_count }}</strong>
         </div>
 
         <div class="card">
             <h3>High</h3>
-            <strong>{{ high }}</strong>
+            <strong>{{ high_count }}</strong>
         </div>
 
         <div class="card">
             <h3>Low</h3>
-            <strong>{{ low }}</strong>
+            <strong>{{ low_count }}</strong>
         </div>
 
     </div>
 
     <section class="results">
-
         <h2>Analysis Results</h2>
 
         <table>
@@ -310,15 +292,12 @@
             </thead>
 
             <tbody>
-                {% for item in table %}
+                {% for item in results %}
                 <tr>
                     <td>{{ item["Test Name"] }}</td>
                     <td>{{ item["Value"] }}</td>
                     <td>{{ item["Unit"] }}</td>
-                    <td>
-                        {{ item["Min Range"] }} -
-                        {{ item["Max Range"] }}
-                    </td>
+                    <td>{{ item["Reference Range"] }}</td>
                     <td>{{ item["Category"] }}</td>
                     <td class="status {{ item['Status'] }}">
                         {{ item["Status"] }}
@@ -329,12 +308,11 @@
         </table>
 
         <div class="note">
-            Results are compared with the reference ranges
-            supplied in the uploaded report. This tool is
-            educational and does not provide a medical diagnosis.
-            Please verify extracted values with the original report.
+            Results are compared with the reference ranges supplied
+            in the uploaded report. This educational tool does not
+            provide a medical diagnosis. Always verify extracted
+            values with the original laboratory report.
         </div>
-
     </section>
 
     {% endif %}
