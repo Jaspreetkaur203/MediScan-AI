@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>MediScan | Medical Lab Analyzer</title>
 
     <style>
@@ -44,7 +45,7 @@
 
         .hero {
             text-align: center;
-            padding: 55px 20px 35px;
+            padding: 45px 20px 30px;
         }
 
         .hero h1 {
@@ -59,7 +60,7 @@
         }
 
         .container {
-            max-width: 950px;
+            max-width: 1050px;
             margin: auto;
             padding: 20px;
         }
@@ -96,10 +97,11 @@
             background: #087e83;
             color: white;
             border: none;
-            padding: 14px 35px;
+            padding: 14px 30px;
             border-radius: 8px;
-            font-size: 16px;
+            font-size: 15px;
             cursor: pointer;
+            margin: 5px;
         }
 
         button:hover {
@@ -109,9 +111,17 @@
         .error {
             color: #c62828;
             background: #ffeded;
-            padding: 14px;
+            padding: 15px;
             border-radius: 8px;
             margin: 20px 0;
+        }
+
+        .file-info {
+            background: #e9f5f7;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            color: #123b5d;
         }
 
         .summary {
@@ -145,12 +155,13 @@
             padding: 25px;
             border-radius: 14px;
             overflow-x: auto;
-            margin-bottom: 35px;
+            margin-bottom: 25px;
+            box-shadow: 0 3px 15px #173c5d10;
         }
 
         .results h2 {
             color: #123b5d;
-            margin-bottom: 20px;
+            margin-bottom: 18px;
         }
 
         table {
@@ -179,6 +190,26 @@
         .High { color: #d97706; }
         .Low { color: #c62828; }
 
+        .guidance-card {
+            background: #f3f7fb;
+            padding: 18px;
+            margin-bottom: 14px;
+            border-radius: 10px;
+            border-left: 4px solid #087e83;
+        }
+
+        .guidance-card h3 {
+            color: #123b5d;
+            margin-bottom: 9px;
+            font-size: 16px;
+        }
+
+        .guidance-card p {
+            color: #526b7c;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
         .note {
             background: #edf6fa;
             padding: 15px;
@@ -187,6 +218,11 @@
             color: #526b7c;
             line-height: 1.6;
             margin-top: 20px;
+        }
+
+        .action-buttons {
+            text-align: center;
+            margin: 25px 0 35px;
         }
 
         footer {
@@ -215,6 +251,31 @@
                 padding: 25px 15px;
             }
         }
+
+        @media print {
+            body {
+                background: white;
+            }
+
+            header, .hero, .upload-box,
+            footer, .action-buttons {
+                display: none !important;
+            }
+
+            .container {
+                max-width: 100%;
+            }
+
+            .results, .card {
+                box-shadow: none;
+                border: 1px solid #ddd;
+                break-inside: avoid;
+            }
+
+            table {
+                min-width: 100%;
+            }
+        }
     </style>
 </head>
 
@@ -233,24 +294,44 @@
 <div class="container">
 
     <section class="upload-box">
+
         <div class="upload-icon">🧪</div>
+
         <h2>Upload Your Lab Report</h2>
+
         <p>Choose a PDF laboratory report to begin analysis.</p>
 
-        <form action="/analyze" method="POST" enctype="multipart/form-data">
-            <input type="file" name="report" accept=".pdf" required>
+        <form action="/analyze"
+              method="POST"
+              enctype="multipart/form-data">
+
+            <input type="file"
+                   name="report"
+                   accept=".pdf"
+                   required>
+
             <br>
+
             <button type="submit">Analyze Report</button>
+
         </form>
+
     </section>
 
     {% if error %}
+
     <div class="error">
-        {{ error }}
+        <strong>Analysis Error:</strong> {{ error }}
     </div>
+
     {% endif %}
 
+
     {% if results %}
+
+    <div class="file-info">
+        <strong>Uploaded Report:</strong> {{ filename }}
+    </div>
 
     <div class="summary">
 
@@ -276,10 +357,13 @@
 
     </div>
 
+
     <section class="results">
+
         <h2>Analysis Results</h2>
 
         <table>
+
             <thead>
                 <tr>
                     <th>Test Name</th>
@@ -292,28 +376,82 @@
             </thead>
 
             <tbody>
+
                 {% for item in results %}
+
                 <tr>
                     <td>{{ item["Test Name"] }}</td>
                     <td>{{ item["Value"] }}</td>
                     <td>{{ item["Unit"] }}</td>
                     <td>{{ item["Reference Range"] }}</td>
                     <td>{{ item["Category"] }}</td>
+
                     <td class="status {{ item['Status'] }}">
                         {{ item["Status"] }}
                     </td>
                 </tr>
+
                 {% endfor %}
+
             </tbody>
+
         </table>
 
-        <div class="note">
-            Results are compared with the reference ranges supplied
-            in the uploaded report. This educational tool does not
-            provide a medical diagnosis. Always verify extracted
-            values with the original laboratory report.
-        </div>
     </section>
+
+
+    <section class="results">
+
+        <h2>Smart Test Guidance</h2>
+
+        <p style="color:#718096; margin-bottom:20px;">
+            Possible follow-up investigations to discuss
+            with a healthcare professional.
+        </p>
+
+        {% if guidance %}
+
+            {% for item in guidance %}
+
+            <div class="guidance-card">
+
+                <h3>
+                    {{ item["test_name"] }} -
+                    {{ item["status"] }}
+                </h3>
+
+                <p>{{ item["message"] }}</p>
+
+            </div>
+
+            {% endfor %}
+
+        {% else %}
+
+            <p style="color:#16834a;">
+                No abnormal results were detected against
+                the supplied reference ranges.
+            </p>
+
+        {% endif %}
+
+        <div class="note">
+            This guidance is for educational purposes only.
+            It does not prescribe medical tests or diagnose
+            any condition. A healthcare professional should
+            decide whether further testing is appropriate.
+        </div>
+
+    </section>
+
+
+    <div class="action-buttons">
+
+        <button onclick="window.print()">
+            Download / Save Analysis as PDF
+        </button>
+
+    </div>
 
     {% endif %}
 
