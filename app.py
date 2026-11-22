@@ -25,10 +25,12 @@ app = FastAPI(
 # HTML Templates
 templates = Jinja2Templates(directory="templates")
 
+
 # Load trained ML model
 try:
     with open("mediscan_model.pkl", "rb") as file:
         model = pickle.load(file)
+
     print("MediScan ML Model Loaded Successfully")
 
 except Exception as e:
@@ -46,10 +48,11 @@ def extract_pdf_text(pdf_bytes):
         filetype="pdf"
     )
 
-    for page in pdf:
-        extracted_text += page.get_text() + "\n"
-
-    pdf.close()
+    try:
+        for page in pdf:
+            extracted_text += page.get_text() + "\n"
+    finally:
+        pdf.close()
 
     return extracted_text
 
@@ -88,8 +91,7 @@ def check_status(row):
     elif row["Value"] > row["Max Range"]:
         return "High"
 
-    else:
-        return "Normal"
+    return "Normal"
 
 
 # Home Page
@@ -97,8 +99,11 @@ def check_status(row):
 async def home(request: Request):
 
     return templates.TemplateResponse(
-        "index.html",
-        {"request": request}
+        request=request,
+        name="index.html",
+        context={
+            "request": request
+        }
     )
 
 
@@ -109,11 +114,12 @@ async def analyze(
     report: UploadFile = File(...)
 ):
 
-    if not report.filename.lower().endswith(".pdf"):
+    if not report.filename or not report.filename.lower().endswith(".pdf"):
 
         return templates.TemplateResponse(
-            "index.html",
-            {
+            request=request,
+            name="index.html",
+            context={
                 "request": request,
                 "error": "Please upload a PDF file."
             }
@@ -123,6 +129,9 @@ async def analyze(
 
         pdf_bytes = await report.read()
 
+        if len(pdf_bytes) == 0:
+            raise ValueError("Uploaded PDF is empty.")
+
         if len(pdf_bytes) > 10 * 1024 * 1024:
             raise ValueError("PDF must be smaller than 10 MB.")
 
@@ -131,7 +140,7 @@ async def analyze(
         if not extracted_text.strip():
 
             raise ValueError(
-                "No readable text found in this PDF. Scanned PDF OCR is not enabled yet."
+                "No readable text found. Scanned PDF OCR is not enabled yet."
             )
 
         results = extract_test_results(extracted_text)
@@ -144,6 +153,7 @@ async def analyze(
 
         df = pd.DataFrame(results)
 
+        # Check status
         df["Status"] = df.apply(
             check_status,
             axis=1
@@ -157,15 +167,18 @@ async def analyze(
                     df["Test Name"].str.upper()
                 )
 
-            except Exception:
+            except Exception as e:
+                print("Prediction Error:", e)
                 df["Category"] = "Unclassified"
 
         else:
             df["Category"] = "Model unavailable"
 
+        # Prepare results
         return templates.TemplateResponse(
-            "index.html",
-            {
+            request=request,
+            name="index.html",
+            context={
                 "request": request,
                 "table": df.to_dict(orient="records"),
                 "total": len(df),
@@ -177,9 +190,12 @@ async def analyze(
 
     except Exception as e:
 
+        print("Analysis Error:", e)
+
         return templates.TemplateResponse(
-            "index.html",
-            {
+            request=request,
+            name="index.html",
+            context={
                 "request": request,
                 "error": str(e)
             }
