@@ -1,6 +1,6 @@
 
 # =====================================================
-# Project: MediScan - AI Powered Medical Lab Report Analyzer
+# MediScan - AI Powered Medical Lab Report Analyzer
 # Developed by: Jaspreet Kaur
 # Technology: Python, FastAPI, Machine Learning
 # =====================================================
@@ -13,7 +13,6 @@ import pandas as pd
 import fitz
 import pickle
 import re
-import os
 import logging
 
 # -----------------------------------------------------
@@ -31,20 +30,36 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------
-# LOAD TRAINED ML MODEL
+# LOAD ML MODEL
 # -----------------------------------------------------
 
-MODEL_PATH = "mediscan_model.pkl"
-
 try:
-    with open(MODEL_PATH, "rb") as file:
+    with open("mediscan_model.pkl", "rb") as file:
         model = pickle.load(file)
 
-    logger.info("ML Model loaded successfully")
+    logger.info("ML model loaded successfully")
 
 except Exception as e:
     logger.exception("Model loading failed")
-    raise RuntimeError(f"Unable to load ML model: {e}")
+    raise RuntimeError(f"Could not load ML model: {e}")
+
+
+# -----------------------------------------------------
+# COMMON TEMPLATE CONTEXT
+# -----------------------------------------------------
+
+def empty_context(error=None):
+    return {
+        "request": None,
+        "results": [],
+        "total_tests": 0,
+        "normal_count": 0,
+        "high_count": 0,
+        "low_count": 0,
+        "guidance": [],
+        "filename": "",
+        "error": error
+    }
 
 
 # -----------------------------------------------------
@@ -53,35 +68,38 @@ except Exception as e:
 
 def extract_pdf_text(pdf_bytes):
 
-    text = ""
-
     try:
-        pdf_document = fitz.open(
+        document = fitz.open(
             stream=pdf_bytes,
             filetype="pdf"
         )
 
-        for page in pdf_document:
+        text = ""
+
+        for page in document:
             text += page.get_text("text") + "\n"
 
-        pdf_document.close()
+        document.close()
+        return text
 
     except Exception as e:
         logger.exception("PDF extraction failed")
         raise ValueError("Unable to read this PDF file.")
 
-    return text
-
 
 # -----------------------------------------------------
-# EXTRACT TEST RESULTS
+# EXTRACT CBC TEST RESULTS
 # -----------------------------------------------------
 
 def extract_test_results(text):
 
     results = []
 
-    normalized_text = re.sub(r"\s+", " ", text).strip()
+    normalized_text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
 
     normalized_text = re.sub(
         r"thousand/\s*uL",
@@ -158,27 +176,85 @@ def check_status(value, min_range, max_range):
     if value < min_range:
         return "Low"
 
-    elif value > max_range:
+    if value > max_range:
         return "High"
 
-    else:
-        return "Normal"
+    return "Normal"
 
 
 # -----------------------------------------------------
-# PREDICT TEST CATEGORY USING ML MODEL
+# ML CATEGORY PREDICTION
 # -----------------------------------------------------
 
 def predict_category(test_name):
 
     try:
         prediction = model.predict([test_name])
-
         return str(prediction[0])
 
     except Exception:
         logger.exception("Prediction failed")
         return "Unknown"
+
+
+# -----------------------------------------------------
+# SMART TEST GUIDANCE
+# -----------------------------------------------------
+
+def get_test_guidance(results):
+
+    guidance = []
+
+    for item in results:
+
+        test_name = item["Test Name"]
+        status = item["Status"]
+
+        if status == "Normal":
+            continue
+
+        if (
+            test_name in ["Hemoglobin", "MCH", "MCHC"]
+            and status == "Low"
+        ):
+
+            message = (
+                "A healthcare professional may consider whether "
+                "ferritin or iron studies are appropriate, based "
+                "on symptoms and medical history."
+            )
+
+        elif test_name == "WBC Count" and status == "High":
+
+            message = (
+                "A doctor can interpret this result with symptoms "
+                "and medical history and decide whether a repeat "
+                "CBC or other evaluation is needed."
+            )
+
+        elif test_name == "Platelet Count":
+
+            message = (
+                "Discuss this result with a healthcare professional. "
+                "They can decide whether repeat testing or further "
+                "evaluation is appropriate."
+            )
+
+        else:
+
+            message = (
+                "Discuss this result with a healthcare professional "
+                "to decide whether any additional investigation is "
+                "needed."
+            )
+
+        guidance.append({
+            "test_name": test_name,
+            "status": status,
+            "message": message
+        })
+
+    return guidance
 
 
 # -----------------------------------------------------
@@ -188,23 +264,18 @@ def predict_category(test_name):
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
 
+    context = empty_context()
+    context["request"] = request
+
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={
-            "request": request,
-            "results": [],
-            "total_tests": 0,
-            "normal_count": 0,
-            "high_count": 0,
-            "low_count": 0,
-            "error": None
-        }
+        context=context
     )
 
 
 # -----------------------------------------------------
-# ANALYZE MEDICAL REPORT
+# ANALYZE REPORT
 # -----------------------------------------------------
 
 @app.post("/analyze", response_class=HTMLResponse)
@@ -215,43 +286,36 @@ async def analyze_report(
 
     try:
 
-        # Check uploaded file
-        if not report.filename.lower().endswith(".pdf"):
+        filename = report.filename or "Uploaded report.pdf"
 
+        if not filename.lower().endswith(".pdf"):
             raise ValueError("Please upload a PDF file only.")
 
-        # Read PDF
         pdf_bytes = await report.read()
 
-        if len(pdf_bytes) > 10 * 1024 * 1024:
-
-            raise ValueError("File size must be below 10 MB.")
-
         if not pdf_bytes:
+            raise ValueError("The uploaded PDF is empty.")
 
-            raise ValueError("Uploaded PDF is empty.")
+        if len(pdf_bytes) > 10 * 1024 * 1024:
+            raise ValueError("PDF size must be below 10 MB.")
 
-        # Extract PDF text
         extracted_text = extract_pdf_text(pdf_bytes)
 
         if not extracted_text.strip():
+            raise ValueError(
+                "No readable text found. This PDF may be scanned "
+                "or image-based and may need OCR support."
+            )
 
-            raise ValueError("No readable text found in this PDF.")
-
-        # Extract test results
         extracted_results = extract_test_results(extracted_text)
 
         if not extracted_results:
-
             raise ValueError(
-                "No numerical test results found. "
-                "Please upload a supported medical report PDF."
+                "No numerical CBC results found in this PDF format."
             )
 
-        # Create DataFrame
         df = pd.DataFrame(extracted_results)
 
-        # Check status and predict category
         df["Status"] = df.apply(
             lambda row: check_status(
                 row["Value"],
@@ -265,14 +329,12 @@ async def analyze_report(
             predict_category
         )
 
-        # Format reference range
         df["Reference Range"] = (
             df["Min Range"].astype(str)
             + " - "
             + df["Max Range"].astype(str)
         )
 
-        # Convert results for HTML
         results = df[
             [
                 "Test Name",
@@ -284,55 +346,54 @@ async def analyze_report(
             ]
         ].to_dict(orient="records")
 
-        # Summary counts
         total_tests = len(results)
 
         normal_count = sum(
-            1 for item in results
-            if item["Status"] == "Normal"
+            item["Status"] == "Normal"
+            for item in results
         )
 
         high_count = sum(
-            1 for item in results
-            if item["Status"] == "High"
+            item["Status"] == "High"
+            for item in results
         )
 
         low_count = sum(
-            1 for item in results
-            if item["Status"] == "Low"
+            item["Status"] == "Low"
+            for item in results
         )
 
-        # Display results
+        guidance = get_test_guidance(results)
+
+        context = {
+            "request": request,
+            "results": results,
+            "total_tests": total_tests,
+            "normal_count": normal_count,
+            "high_count": high_count,
+            "low_count": low_count,
+            "guidance": guidance,
+            "filename": filename,
+            "error": None
+        }
+
         return templates.TemplateResponse(
             request=request,
             name="index.html",
-            context={
-                "request": request,
-                "results": results,
-                "total_tests": total_tests,
-                "normal_count": normal_count,
-                "high_count": high_count,
-                "low_count": low_count,
-                "error": None
-            }
+            context=context
         )
 
     except Exception as e:
 
         logger.exception("Report analysis failed")
 
+        context = empty_context(str(e))
+        context["request"] = request
+
         return templates.TemplateResponse(
             request=request,
             name="index.html",
-            context={
-                "request": request,
-                "results": [],
-                "total_tests": 0,
-                "normal_count": 0,
-                "high_count": 0,
-                "low_count": 0,
-                "error": str(e)
-            }
+            context=context
         )
 
 
