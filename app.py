@@ -1,6 +1,6 @@
 
 # =====================================================
-# MediScan - AI Powered Medical Lab Report Analyzer
+# Project: MediScan - AI Powered Medical Lab Report Analyzer
 # Developed by: Jaspreet Kaur
 # Technology: Python, FastAPI, Machine Learning
 # =====================================================
@@ -45,6 +45,17 @@ except Exception as e:
 
 
 # -----------------------------------------------------
+# PERCENTAGE CALCULATION
+# -----------------------------------------------------
+
+def calculate_percentage(count, total):
+    if total == 0:
+        return 0
+
+    return round((count / total) * 100, 1)
+
+
+# -----------------------------------------------------
 # COMMON TEMPLATE CONTEXT
 # -----------------------------------------------------
 
@@ -56,6 +67,10 @@ def empty_context(error=None):
         "normal_count": 0,
         "high_count": 0,
         "low_count": 0,
+        "normal_percentage": 0,
+        "high_percentage": 0,
+        "low_percentage": 0,
+        "category_counts": {},
         "guidance": [],
         "filename": "",
         "error": error
@@ -80,6 +95,7 @@ def extract_pdf_text(pdf_bytes):
             text += page.get_text("text") + "\n"
 
         document.close()
+
         return text
 
     except Exception as e:
@@ -316,6 +332,7 @@ async def analyze_report(
 
         df = pd.DataFrame(extracted_results)
 
+        # Check result status
         df["Status"] = df.apply(
             lambda row: check_status(
                 row["Value"],
@@ -325,16 +342,19 @@ async def analyze_report(
             axis=1
         )
 
+        # Predict test category using ML model
         df["Category"] = df["Test Name"].apply(
             predict_category
         )
 
+        # Create reference range
         df["Reference Range"] = (
             df["Min Range"].astype(str)
             + " - "
             + df["Max Range"].astype(str)
         )
 
+        # Prepare final results
         results = df[
             [
                 "Test Name",
@@ -345,6 +365,10 @@ async def analyze_report(
                 "Status"
             ]
         ].to_dict(orient="records")
+
+        # -------------------------------------------------
+        # SUMMARY STATISTICS
+        # -------------------------------------------------
 
         total_tests = len(results)
 
@@ -363,15 +387,55 @@ async def analyze_report(
             for item in results
         )
 
+        # -------------------------------------------------
+        # ANALYTICS DASHBOARD DATA
+        # -------------------------------------------------
+
+        normal_percentage = calculate_percentage(
+            normal_count,
+            total_tests
+        )
+
+        high_percentage = calculate_percentage(
+            high_count,
+            total_tests
+        )
+
+        low_percentage = calculate_percentage(
+            low_count,
+            total_tests
+        )
+
+        # Category-wise test distribution
+        category_counts = (
+            df["Category"]
+            .value_counts()
+            .to_dict()
+        )
+
+        # Smart guidance
         guidance = get_test_guidance(results)
+
+        # -------------------------------------------------
+        # FINAL TEMPLATE CONTEXT
+        # -------------------------------------------------
 
         context = {
             "request": request,
             "results": results,
+
             "total_tests": total_tests,
+
             "normal_count": normal_count,
             "high_count": high_count,
             "low_count": low_count,
+
+            "normal_percentage": normal_percentage,
+            "high_percentage": high_percentage,
+            "low_percentage": low_percentage,
+
+            "category_counts": category_counts,
+
             "guidance": guidance,
             "filename": filename,
             "error": None
